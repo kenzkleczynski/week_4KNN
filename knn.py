@@ -1,13 +1,11 @@
 # %% Imports
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.metrics import ConfusionMatrixDisplay
-
+from sklearn.metrics import ConfusionMatrixDisplay, accuracy_score
 
 # %% # %% 1. Use the question/target variable you submitted
 
@@ -206,12 +204,101 @@ plt.show()
 # Try not to use variable names in the functions, but if you need to that's fine. 
 # (If you can't get the k function and threshold function to work in one function just run them separately.) 
 
+def clean_and_split_data(df, target_col='aid_f'):
+    
+    # remove any rows that have missing/null values
+    df_clean = df.dropna()
+    
+    # separate data into features (X) and target (y)
+    # X = all columns EXCEPT the target
+    # y = only the target column
+    X = df_clean.drop(target_col, axis=1)  # axis=1 means drop a column
+    y = df_clean[target_col]
+    
+    # split the data into training and testing sets (60% train, 40% test)
+    # X_train & y_train = data the model learns patterns from
+    # X_test & y_test = data we use to evaluate how well the model learned
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.4, stratify=y) # ensures both sets have the same proportion of 0's and 1's as original data
+    return X_train, X_test, y_train, y_test
 
 
+def train_and_evaluate_knn(X_train, X_test, y_train, y_test, 
+                           k_values=[3], thresholds=[0.5], show_confusion=True):
+    results = []     # empty list to store results from each k/threshold combination
+    # Outer loop to test each k value (number of neighbors to consider)
+    for k in k_values:
+        # create a new kNN model with the current k value
+        model = KNeighborsClassifier(n_neighbors=k)
+        # train the model using training data
+        model.fit(X_train, y_train)
+        # get probability predictions for test data
+        # predict_proba gives probability for each class [prob of 0, prob of 1]
+        y_prob = model.predict_proba(X_test)[:, 1] #selects only the probability of class 1 (high aid)
+        # Inner loop to test each threshold value (cutoff for classification)
+        for threshold in thresholds:
+            # convert probabilities to actual predictions (0 or 1) using threshold
+            # If probability >= threshold, predict 1 (high aid), otherwise predict 0 (low aid)
+            # .astype(int) makes True/False to 1/0
+            y_pred = (y_prob >= threshold).astype(int)
+            # calculate accuracy by comparing predictions to actual values
+            acc = accuracy_score(y_test, y_pred)
+            # store the results for this combination in results list
+            results.append({
+                'k': k,                    # Number of neighbors used
+                'threshold': threshold,    # Probability cutoff used
+                'accuracy': acc            # Percentage of correct predictions
+            })
+    # Return results as dataframe
+    results_df = pd.DataFrame(results)
+    return results_df
+
+
+# %% Test the functions with different k and threshold values
+X_train, X_test, y_train, y_test = clean_and_split_data(c_train_clean)
+
+results = train_and_evaluate_knn(
+    X_train, X_test, y_train, y_test,
+    k_values=[3,5,9,11,13,15,17,19,21],
+    thresholds=[0.3,0.4,0.5,0.6,0.7])
 # %% 7. How well does the model perform?
 # Did the interaction of the adjusted thresholds and k values help the model? 
 # Why or why not? 
 
+original_accuracy = results[(results['k'] == 3) & (results['threshold'] == 0.5)]['accuracy'].values[0]
+print(original_accuracy)
+
+# Find the best combination
+best_result = results.loc[results['accuracy'].idxmax()]
+print(best_result)
+
+#The model did pretty good overall. With the original settings (k=3 and threshold=0.5),
+# the accuracy was about 0.9123. By changing k and the threshold, I was able to improve
+# the accuracy to about 0.9263 when using k=9 and a threshold of 0.6.
+
+# The interaction between k and the threshold did help the model. Increasing k means the
+# model looks at more nearby points when it makes a prediction instead of just a few.
+# The threshold controls how confident the model has to be before calling something
+# “high aid,” so raising it from 0.5 to 0.6 makes the model a little more picky.
+
+# I think this helped because the data probably does not have an even split between
+# high aid and low aid. Changing the threshold helps deal with that imbalance, and using
+# k=9 gives the model enough neighbors to make a solid decision without being too
+# sensitive to random noise or weird points in the data.
+
 
 # %% 8. Choose another variable as the target in the dataset and create another 
 # kNN model using the two functions you created in step 7. 
+
+# This model is now trying to predict if a school is a flagship school instead of predicting financial aid.
+X_train, X_test, y_train, y_test = clean_and_split_data(c_train_clean, 'flagship_X')
+
+results_flagship = train_and_evaluate_knn(
+    X_train, X_test, y_train, y_test,
+    k_values=[3,5,9],
+    thresholds=[0.4,0.5,0.6])
+print(results_flagship)
+# the model predicts flagship status very well (about 98% accuracy),
+# and changing k or the threshold does not make much difference,
+# which means the features already separate flagship and non-flagship schools clearly.
+
